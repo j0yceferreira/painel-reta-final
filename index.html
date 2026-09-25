@@ -747,7 +747,7 @@ function renderEditable(tableId, arr, cols, onEdit, onDelete){
       const i = +e.target.dataset.i, k = e.target.dataset.k;
       let val = e.target.value;
       arr[i][k] = val;
-      onEdit && onEdit(arr[i], i);
+      onEdit && onEdit(arr[i], i, k);
     });
     inp.addEventListener('blur', ()=>{ saveState(); if(pendingRemote){ const pr=pendingRemote; pendingRemote=null; applyRemoteState(pr); } });
     if(inp.tagName==='SELECT') inp.addEventListener('change', ()=>saveState());
@@ -812,7 +812,11 @@ function render(){
     {key:'nome',label:'Nome'},{key:'tipo',label:'Tipo',type:'select',options:TIPOS},
     {key:'bairro',label:'Bairro'},{key:'pix',label:'Chave Pix'},
     {key:'statusPix',label:'Status Pix',type:'select',options:STATUS_PIX}
-  ]);
+  ], (row, i, k)=>{
+    if(k==='pix'){
+      row.statusPix = (row.pix && String(row.pix).trim()) ? 'Informada' : 'Pendente';
+    }
+  });
 
   renderEditable('tabAtiv', ativ, [
     {key:'data',label:'Data'},{key:'atividade',label:'Atividade'},{key:'participante',label:'Participante'},
