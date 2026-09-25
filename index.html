@@ -929,22 +929,8 @@ document.getElementById('btnPdf').addEventListener('click', async ()=>{
     });
     y += 74;
 
-    doc.setTextColor(...dark); doc.setFontSize(12); doc.setFont('helvetica','bold');
-    doc.text('Indicadores de custos', margin, y); y += 8;
-    doc.autoTable({
-      startY:y, margin:{left:margin,right:margin},
-      head:[['Indicador','Valor','Referência']],
-      body:[
-        ['Orçamento de referência', fmtBRL(state.orcamento), 'Valor inicial da planilha'],
-        ['Total de aportes', fmtBRL(totalCusto), 'Custos registrados'],
-        ['Saldo atual', fmtBRL(saldoFinal), 'Orçamento menos aportes'],
-        ['Lançamentos pendentes', String(pendentesSemAporte), 'Sem veículo e apoio lançados'],
-      ],
-      theme:'grid', styles:{fontSize:9, cellPadding:6, textColor:dark},
-      headStyles:{fillColor:accent, textColor:255, fontStyle:'bold'},
-      alternateRowStyles:{fillColor:[247,247,248]},
-    });
-    y = doc.lastAutoTable.finalY + 22;
+    doc.setTextColor(...muted); doc.setFontSize(9.5); doc.setFont('helvetica','normal');
+    doc.text('Orçamento de referência: ' + fmtBRL(state.orcamento), margin, y); y += 20;
 
     const datesCusto = sortedDates(custos.map(c=>c.data));
     const custoPorDia = groupSum(custos, c=>c.data, c=>+c.total||0);
@@ -1064,12 +1050,8 @@ document.getElementById('btnExport').addEventListener('click', async ()=>{
     ['Pix pendente', pixPend.length],
     ['Participações planejadas', ativ.length],
     ['Total de custos', totalCusto],
-    ['Saldo restante', saldoFinal], [],
-    ['Custos'], ['Indicador','Valor','Referência'],
-    ['Orçamento de referência', state.orcamento, 'Valor inicial da planilha'],
-    ['Total de aportes', totalCusto, 'Custos registrados'],
-    ['Saldo atual', saldoFinal, 'Orçamento menos aportes'],
-    ['Lançamentos pendentes', pendentesSemAporte, 'Sem veículo e apoio'],
+    ['Saldo restante', saldoFinal],
+    ['Orçamento de referência', state.orcamento],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(painelAoa), 'Painel Gerencial');
 
