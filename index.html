@@ -579,7 +579,7 @@ select.cell-input{min-width:120px;}
       <div class="card"><h2>Participações por dia <small>pessoas alocadas em atividades</small></h2><div id="chartPartDia"></div></div>
     </div>
     <div class="grid3">
-      <div class="card"><h2>Custo por atividade <small>maiores desembolsos</small></h2><div id="chartCustoAtiv"></div></div>
+      <div class="card"><h2>Custo por atividade <small>todas as atividades, da maior para a menor</small></h2><div class="scroll" id="chartCustoAtiv"></div></div>
       <div class="card"><h2>Transporte da equipe <small>por modalidade</small></h2><div id="chartTransp"></div></div>
     </div>
     <div class="grid3">
@@ -790,7 +790,7 @@ function render(){
   barChart(document.getElementById('chartPartDia'), datesAtiv, datesAtiv.map(d=>partPorDia.get(d)||0), {color:'var(--accent2)'});
 
   const custoPorAtiv = groupSum(custos.filter(c=>c.atividade), c=>c.atividade, c=>+c.total||0);
-  const topAtiv = [...custoPorAtiv.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const topAtiv = [...custoPorAtiv.entries()].sort((a,b)=>b[1]-a[1]);
   hbarChart(document.getElementById('chartCustoAtiv'), topAtiv.map(a=>a[0]), topAtiv.map(a=>a[1]), {fmt:fmtBRL});
 
   const transpCount = groupSum(transp, t=>t.tipo);
