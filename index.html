@@ -20,7 +20,7 @@
     const dbfs = getFirestore(app);
     const ref = doc(dbfs, 'painel', 'state');
     window.firebaseSync = {
-      subscribe(cb){ return onSnapshot(ref, (snap)=>cb(snap.exists()?snap.data():null), (err)=>console.error('Firebase onSnapshot erro', err)); },
+      subscribe(cb, errCb){ return onSnapshot(ref, (snap)=>cb(snap.exists()?snap.data():null), (err)=>{ console.error('Firebase onSnapshot erro', err); errCb && errCb(err); }); },
       write(data){ return setDoc(ref, data); }
     };
   }catch(e){ console.error('Firebase init falhou', e); }
@@ -627,10 +627,16 @@ function loadState(){
   return JSON.parse(JSON.stringify(DEFAULT_DATA));
 }
 let dbCap=null, dbDoc=null, dbWriting=false, dbDirty=false, dbWriteTimer=null, pendingRemote=null, syncKind=null;
+function setSync(msg){ const el=document.getElementById('syncStatus'); if(el) el.textContent=msg; }
+function hhmm(){ return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
 function saveState(){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
   render();
   if(syncKind){ clearTimeout(dbWriteTimer); dbWriteTimer = setTimeout(flushDbWrite, 600); }
+}
+function shareWhileTyping(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  if(syncKind){ clearTimeout(dbWriteTimer); dbWriteTimer = setTimeout(flushDbWrite, 900); }
 }
 async function flushDbWrite(){
   if(!syncKind) return;
@@ -640,12 +646,17 @@ async function flushDbWrite(){
   try{
     if(syncKind==='claude' && dbDoc) await dbDoc.set(snapshot);
     else if(syncKind==='firebase' && window.firebaseSync) await window.firebaseSync.write(snapshot);
-  }catch(e){}
+    setSync('🟢 Sincronizado — última gravação às ' + hhmm());
+  }catch(e){
+    console.error('Falha ao gravar no banco compartilhado', e);
+    setSync('⚠️ Não consegui gravar no banco compartilhado (' + ((e && (e.code||e.message))||'erro') + '). Suas edições ficam só neste navegador.');
+  }
   dbWriting = false;
   if(dbDirty){ dbDirty = false; flushDbWrite(); }
 }
 function applyRemoteState(remote){
   state = remote;
+  if(syncKind) setSync('🟢 Sincronizado — última atualização recebida às ' + hhmm());
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
   render();
 }
@@ -677,14 +688,15 @@ async function initSharedDb(){
 }
 async function tryFirebase(statusEl){
   let tries=0;
-  while(!window.firebaseSync && tries<40){ await new Promise(r=>setTimeout(r,100)); tries++; }
+  while(!window.firebaseSync && tries<150){ await new Promise(r=>setTimeout(r,100)); tries++; }
   if(!window.firebaseSync){
     if(statusEl) statusEl.textContent = '💾 Salvo apenas neste navegador';
     return;
   }
   syncKind = 'firebase';
-  if(statusEl) statusEl.textContent = '🟢 Sincronizado — edições de todos aparecem aqui em tempo real';
-  window.firebaseSync.subscribe((remote)=>handleRemote(remote, !!remote, statusEl));
+  if(statusEl) statusEl.textContent = '🟢 Conectando ao banco compartilhado…';
+  window.firebaseSync.subscribe((remote)=>handleRemote(remote, !!remote, statusEl),
+    (err)=>setSync('⚠️ Sem acesso ao banco compartilhado (' + ((err && (err.code||err.message))||'erro') + '). Verifique as regras do Firestore. Suas edições ficam só neste navegador.'));
 }
 let state = loadState();
 
@@ -773,6 +785,7 @@ function renderEditable(tableId, arr, cols, onEdit, onDelete){
       let val = e.target.value;
       arr[i][k] = val;
       onEdit && onEdit(arr[i], i, k);
+      shareWhileTyping();
     });
     inp.addEventListener('blur', ()=>{ saveState(); if(pendingRemote){ const pr=pendingRemote; pendingRemote=null; applyRemoteState(pr); } });
     if(inp.tagName==='SELECT') inp.addEventListener('change', ()=>saveState());
