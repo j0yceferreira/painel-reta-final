@@ -692,6 +692,31 @@ function fmtBRL(n){ n=Number(n)||0; return n.toLocaleString('pt-BR',{style:'curr
 function parseDate(s){ if(!s) return null; const p=String(s).split('.'); if(p.length!==3) return null; return new Date(+p[2],+p[1]-1,+p[0]); }
 function sortedDates(list){ const set=[...new Set(list.filter(Boolean))]; return set.sort((a,b)=>{const da=parseDate(a),db=parseDate(b); if(!da||!db) return String(a).localeCompare(String(b)); return da-db;}); }
 function groupSum(arr,keyFn,valFn){ const m=new Map(); for(const it of arr){const k=keyFn(it); if(k===null||k===undefined||k==='') continue; m.set(k,(m.get(k)||0)+(valFn?valFn(it):1));} return m; }
+function normName(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLowerCase(); }
+function custoPorAtividadeMap(custos, ativ){
+  // índice participante+data -> atividades
+  const idx = new Map();
+  for(const a of ativ){
+    if(!a.atividade) continue;
+    const k = normName(a.participante)+'|'+String(a.data||'').trim();
+    if(!idx.has(k)) idx.set(k, new Set());
+    idx.get(k).add(a.atividade);
+  }
+  const res = new Map();
+  const add = (name, v)=>res.set(name, (res.get(name)||0)+v);
+  for(const c of custos){
+    const total = +c.total||0;
+    if(!total) continue;
+    if(c.atividade && String(c.atividade).trim()){ add(String(c.atividade).trim(), total); continue; }
+    const data = String(c.data||'').trim();
+    const partes = String(c.nome||'').split(/\s+e\s+|\/|,/).map(normName).filter(Boolean);
+    const acts = new Set();
+    for(const p of partes){ const s = idx.get(p+'|'+data); if(s) s.forEach(x=>acts.add(x)); }
+    if(acts.size){ const share = total/acts.size; acts.forEach(x=>add(x, share)); }
+    else add('Sem atividade vinculada', total);
+  }
+  return res;
+}
 
 function shortDate(s){
   const p = String(s||'').split('.');
@@ -764,11 +789,11 @@ function render(){
   document.getElementById('inOrc').value = state.orcamento;
   const custos=state.custos, ativ=state.ativ, transp=state.transp;
 
-  custos.forEach(c=>{ c.veiculo=+c.veiculo||0; c.apoio=+c.apoio||0; c.total=+(c.veiculo+c.apoio).toFixed(2); });
+  custos.forEach(c=>{ c.veiculo=+c.veiculo||0; c.apoio=+c.apoio||0; c.total=+c.total||0; });
 
   const totalCusto = custos.reduce((s,c)=>s+(+c.total||0),0);
   const saldo = state.orcamento - totalCusto;
-  const pessoas = new Set([...transp.map(t=>t.nome), ...ativ.map(a=>a.participante)].filter(Boolean));
+  const pessoas = new Set(transp.map(t=>t.nome).filter(Boolean));
   const pixPend = transp.filter(t=>(t.statusPix||'').toLowerCase().startsWith('pend'));
 
   document.getElementById('kpis').innerHTML = [
@@ -789,8 +814,8 @@ function render(){
   const partPorDia = groupSum(ativ, a=>a.data);
   barChart(document.getElementById('chartPartDia'), datesAtiv, datesAtiv.map(d=>partPorDia.get(d)||0), {color:'var(--accent2)'});
 
-  const custoPorAtiv = groupSum(custos.filter(c=>c.atividade), c=>c.atividade, c=>+c.total||0);
-  const topAtiv = [...custoPorAtiv.entries()].sort((a,b)=>b[1]-a[1]);
+  const custoPorAtiv = custoPorAtividadeMap(custos, ativ);
+  const topAtiv = [...custoPorAtiv.entries()].sort((a,b)=>{ const sa=a[0]==='Sem atividade vinculada', sb=b[0]==='Sem atividade vinculada'; if(sa!==sb) return sa?1:-1; return b[1]-a[1]; });
   hbarChart(document.getElementById('chartCustoAtiv'), topAtiv.map(a=>a[0]), topAtiv.map(a=>a[1]), {fmt:fmtBRL});
 
   const transpCount = groupSum(transp, t=>t.tipo);
@@ -828,7 +853,9 @@ function render(){
   renderEditable('tabCustos', custos, [
     {key:'nome',label:'Nome/Equipe'},{key:'data',label:'Data'},{key:'atividade',label:'Atividade'},
     {key:'veiculo',label:'Veículo',type:'number'},{key:'apoio',label:'Apoio',type:'number'},
-  ]);
+  ], (row, i, k)=>{
+    if(k==='veiculo' || k==='apoio'){ row.total = +((+row.veiculo||0)+(+row.apoio||0)).toFixed(2); }
+  });
   // overlay computed total/saldo columns (readonly) by re-rendering with extra columns
   const tbody = document.getElementById('tabCustos').querySelector('tbody');
   const rows = tbody.querySelectorAll('tr');
@@ -899,7 +926,7 @@ document.getElementById('btnPdf').addEventListener('click', async ()=>{
     const custos = state.custos, ativ = state.ativ, transp = state.transp;
     const totalCusto = custos.reduce((s,c)=>s+(+c.total||0),0);
     const saldoFinal = state.orcamento - totalCusto;
-    const pessoas = new Set([...transp.map(t=>t.nome), ...ativ.map(a=>a.participante)].filter(Boolean));
+    const pessoas = new Set(transp.map(t=>t.nome).filter(Boolean));
     const pixPend = transp.filter(t=>(t.statusPix||'').toLowerCase().startsWith('pend'));
     const pendentesSemAporte = custos.filter(c=>(+c.veiculo||0)===0 && (+c.apoio||0)===0).length;
 
@@ -947,17 +974,25 @@ document.getElementById('btnPdf').addEventListener('click', async ()=>{
     y = doc.lastAutoTable.finalY + 22;
 
     if(y > 620){ doc.addPage(); y = 50; }
-    const custoPorAtiv = groupSum(custos.filter(c=>c.atividade), c=>c.atividade, c=>+c.total||0);
-    const topAtiv = [...custoPorAtiv.entries()].sort((a,b)=>b[1]-a[1]);
+    const custoPorAtiv = custoPorAtividadeMap(custos, ativ);
+    const topAtiv = [...custoPorAtiv.entries()].sort((a,b)=>{ const sa=a[0]==='Sem atividade vinculada', sb=b[0]==='Sem atividade vinculada'; if(sa!==sb) return sa?1:-1; return b[1]-a[1]; });
     doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.text('Custo por atividade', margin, y); y+=8;
     doc.autoTable({
       startY:y, margin:{left:margin,right:margin},
-      head:[['Atividade','Total']],
-      body: topAtiv.map(a=>[a[0], fmtBRL(a[1])]),
+      head:[['Atividade','','Total']],
+      body: topAtiv.map(a=>[a[0], '', fmtBRL(a[1])]),
       theme:'grid', styles:{fontSize:8.5, cellPadding:5, textColor:dark},
       headStyles:{fillColor:accent, textColor:255, fontStyle:'bold'},
       alternateRowStyles:{fillColor:[247,247,248]},
-      columnStyles:{1:{halign:'right', cellWidth:80}},
+      columnStyles:{1:{cellWidth:130}, 2:{halign:'right', cellWidth:80}},
+      didDrawCell:(d)=>{
+        if(d.section==='body' && d.column.index===1){
+          const maxV = Math.max(1, ...topAtiv.map(a=>a[1]));
+          const w = (d.cell.width-10) * (topAtiv[d.row.index][1]/maxV);
+          doc.setFillColor(...accent);
+          doc.roundedRect(d.cell.x+5, d.cell.y+d.cell.height/2-4, Math.max(w,1), 8, 2, 2, 'F');
+        }
+      },
     });
     y = doc.lastAutoTable.finalY + 22;
 
@@ -1039,7 +1074,7 @@ document.getElementById('btnExport').addEventListener('click', async ()=>{
   const custos = state.custos, ativ = state.ativ, transp = state.transp;
   const totalCusto = custos.reduce((s,c)=>s+(+c.total||0),0);
   const saldoFinal = state.orcamento - totalCusto;
-  const pessoas = new Set([...transp.map(t=>t.nome), ...ativ.map(a=>a.participante)].filter(Boolean));
+  const pessoas = new Set(transp.map(t=>t.nome).filter(Boolean));
   const pixPend = transp.filter(t=>(t.statusPix||'').toLowerCase().startsWith('pend'));
   const pendentesSemAporte = custos.filter(c=>(+c.veiculo||0)===0 && (+c.apoio||0)===0).length;
 
